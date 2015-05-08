@@ -28,6 +28,7 @@ PRODUCT_PACKAGES += \
     libbcc \
     libfilterpack_imageproc \
     libgabi++ \
+    libinput \
     libkeystore \
     libmdnssd \
     libnfc_ndef \
@@ -60,7 +61,32 @@ PRODUCT_PACKAGES += \
     screenrecord \
     telephony-common \
     voip-common \
+    recovery_resize2fs \
     telephony-msim
+
+# for Ubuntu Touch (hybris, platform-api, utils, etc)
+PRODUCT_PACKAGES += \
+    apns-conf.xml \
+    libcamera_compat_layer \
+    camera_service \
+    libis_compat_layer \
+    libmedia_compat_layer \
+    libsf_compat_layer \
+    libui_compat_layer \
+    direct_camera_test \
+    direct_input_test \
+    direct_media_test \
+    direct_sf_test \
+    direct_ubuntu_application_sensors_c_api_for_hybris_test \
+    direct_ubuntu_application_sensors_for_hybris_test \
+    direct_ubuntu_application_gps_c_api_for_hybris_test \
+    libubuntu_application_api \
+    ubuntuappmanager \
+    upstart-property-watcher
+
+# for testing
+PRODUCT_PACKAGES += \
+    autopilot-finger.idc
 
 $(call inherit-product, $(SRC_TARGET_DIR)/product/core_minimal.mk)
 # Override the PRODUCT_BOOT_JARS set in core_minimal.mk

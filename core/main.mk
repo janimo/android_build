@@ -148,51 +148,51 @@ $(error Directory names containing spaces not supported)
 endif
 
 # Check for the corrent jdk
-ifneq ($(shell java -version 2>&1 | grep -i openjdk),)
-$(info ************************************************************)
-$(info You are attempting to build with an unsupported JDK.)
-$(info $(space))
-$(info You use OpenJDK but only Sun/Oracle JDK is supported.)
-$(info Please follow the machine setup instructions at)
-$(info $(space)$(space)$(space)$(space)https://source.android.com/source/download.html)
-$(info $(space))
-$(info Continue at your own peril!)
-$(info ************************************************************)
-endif
+#ifneq ($(shell java -version 2>&1 | grep -i openjdk),)
+#$(info ************************************************************)
+#$(info You are attempting to build with an unsupported JDK.)
+#$(info $(space))
+#$(info You use OpenJDK but only Sun/Oracle JDK is supported.)
+#$(info Please follow the machine setup instructions at)
+#$(info $(space)$(space)$(space)$(space)https://source.android.com/source/download.html)
+#$(info $(space))
+#$(info Continue at your own peril!)
+#$(info ************************************************************)
+#endif
 
 # Check for the correct version of java
-java_version := $(shell java -version 2>&1 | head -n 1 | grep '^java .*[ "]1\.[67][\. "$$]')
-ifneq ($(shell java -version 2>&1 | grep -i openjdk),)
-java_version :=
-endif
-ifeq ($(strip $(java_version)),)
-$(info ************************************************************)
-$(info You are attempting to build with an unsupported version)
-$(info of java.)
-$(info $(space))
-$(info Your version is: $(shell java -version 2>&1 | head -n 1).)
-$(info The correct version is: Java SE 1.6 or 1.7.)
-$(info $(space))
-$(info Please follow the machine setup instructions at)
-$(info $(space)$(space)$(space)$(space)https://source.android.com/source/download.html)
-$(info ************************************************************)
-endif
+#java_version := $(shell java -version 2>&1 | head -n 1 | grep '^java .*[ "]1\.[67][\. "$$]')
+#ifneq ($(shell java -version 2>&1 | grep -i openjdk),)
+#java_version :=
+#endif
+#ifeq ($(strip $(java_version)),)
+#$(info ************************************************************)
+#$(info You are attempting to build with an unsupported version)
+#$(info of java.)
+#$(info $(space))
+#$(info Your version is: $(shell java -version 2>&1 | head -n 1).)
+#$(info The correct version is: Java SE 1.6 or 1.7.)
+#$(info $(space))
+#$(info Please follow the machine setup instructions at)
+#$(info $(space)$(space)$(space)$(space)https://source.android.com/source/download.html)
+#$(info ************************************************************)
+#endif
 
 # Check for the correct version of javac
-javac_version := $(shell javac -version 2>&1 | head -n 1 | grep '[ "]1\.[67][\. "$$]')
-ifeq ($(strip $(javac_version)),)
-$(info ************************************************************)
-$(info You are attempting to build with the incorrect version)
-$(info of javac.)
-$(info $(space))
-$(info Your version is: $(shell javac -version 2>&1 | head -n 1).)
-$(info The correct version is: 1.6 or 1.7.)
-$(info $(space))
-$(info Please follow the machine setup instructions at)
-$(info $(space)$(space)$(space)$(space)https://source.android.com/source/download.html)
-$(info ************************************************************)
-$(error stop)
-endif
+#javac_version := $(shell javac -version 2>&1 | head -n 1 | grep '[ "]1\.[67][\. "$$]')
+#ifeq ($(strip $(javac_version)),)
+#$(info ************************************************************)
+#$(info You are attempting to build with the incorrect version)
+#$(info of javac.)
+#$(info $(space))
+#$(info Your version is: $(shell javac -version 2>&1 | head -n 1).)
+#$(info The correct version is: 1.6 or 1.7.)
+#$(info $(space))
+#$(info Please follow the machine setup instructions at)
+#$(info $(space)$(space)$(space)$(space)https://source.android.com/source/download.html)
+#$(info ************************************************************)
+#$(error stop)
+#endif
 
 ifndef BUILD_EMULATOR
 ifeq (darwin,$(HOST_OS))
@@ -448,9 +448,134 @@ endif
 
 else	# !SDK_ONLY
 #
-# Typical build; include any Android.mk files we can find.
+# Include select projects needed for Ubuntu Touch only
 #
-subdirs := $(TOP)
+
+subdirs := \
+	abi/cpp \
+	bionic \
+	bootable/recovery \
+	build/libs \
+	build/target \
+	build/tools/acp \
+	build/tools/check_prereq \
+	build/tools/fs_config \
+	build/tools/zipalign \
+	development/tools/emulator/opengl \
+	external/aac \
+	external/busybox \
+	external/bzip2 \
+	external/checkpolicy \
+	external/e2fsprogs \
+	external/expat \
+	external/flac \
+	external/freetype \
+	external/fsck_msdos \
+	external/gcc-demangle \
+	external/genext2fs \
+	external/giflib \
+	external/gtest \
+	external/icu4c \
+	external/jhead \
+	external/jpeg \
+	external/liblzf \
+	external/libgsm \
+	external/libpng \
+	external/libvpx \
+	external/libselinux \
+	external/libsepol \
+	external/mksh \
+	external/openssl \
+	external/pigz \
+	external/protobuf \
+	external/qemu \
+	external/scrypt \
+	external/sepolicy \
+	external/sfntly \
+	external/skia \
+	external/sonivox \
+	external/speex \
+	external/sqlite \
+	external/stlport \
+	external/tinycompress \
+	external/tinyalsa \
+	external/tremolo \
+	external/webp \
+	external/webrtc \
+	external/wpa_supplicant_6 \
+	external/wpa_supplicant_8 \
+	external/yaffs2 \
+	external/zlib \
+	frameworks/av/camera \
+	frameworks/av/drm \
+	frameworks/av/media/common_time \
+	frameworks/av/media/libcpustats \
+	frameworks/av/media/libaah_rtp \
+	frameworks/av/media/libeffects \
+	frameworks/av/media/libmedia \
+	frameworks/av/media/libmedia_native \
+	frameworks/av/media/libmediaplayerservice \
+	frameworks/av/media/libnbaio \
+	frameworks/av/media/libstagefright \
+	frameworks/av/media/mediaserver \
+	frameworks/av/services/audioflinger \
+	frameworks/av/services/medialog \
+	frameworks/av/services/camera/libcameraservice \
+	frameworks/base/cmds/bootanimation \
+	frameworks/base/cmds/screencap \
+	frameworks/base/libs/androidfw \
+	frameworks/base/libs/diskusage \
+	frameworks/base/services/input \
+	frameworks/base/tools/aapt \
+	frameworks/native/cmds/installd \
+	frameworks/native/cmds/sensorservice \
+	frameworks/native/cmds/servicemanager \
+	frameworks/native/cmds/surfaceflinger \
+	frameworks/native/libs \
+	frameworks/native/opengl \
+	frameworks/native/services \
+	frameworks/opt/emoji \
+	hardware \
+	prebuilts/tools/linux-x86/sdl \
+	sdk/emulator \
+	system/core \
+	system/vold \
+	system/bluetooth \
+	system/extras/ext4_utils \
+	system/media/audio_utils \
+	system/media/camera \
+	system/media/audio_route \
+	system/su \
+	system/security/keystore \
+	system/security/softkeymaster
+
+ifeq ($(TARGET_DEVICE),generic_x86)
+subdirs += \
+	prebuilts/qemu-kernel/x86/pc-bios
+endif
+
+# device and vendor
+subdirs += \
+	device/asus \
+	device/generic \
+	device/lge \
+	device/samsung \
+	vendor/asus \
+	vendor/audience \
+	vendor/broadcom \
+	vendor/cm \
+	vendor/elan \
+	vendor/invensense \
+	vendor/lge \
+	vendor/nvidia \
+	vendor/nxp \
+	vendor/qcom \
+	vendor/samsung \
+	vendor/widevine
+
+# Specific projects for Ubuntu Touch
+subdirs += \
+	ubuntu
 
 FULL_BUILD := true
 

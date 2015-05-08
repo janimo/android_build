@@ -304,12 +304,7 @@ endif
 # Generic tools.
 
 LEX := flex
-# The default PKGDATADIR built in the prebuilt bison is a relative path
-# external/bison/data.
-# To run bison from elsewhere you need to set up enviromental variable
-# BISON_PKGDATADIR.
-BISON_PKGDATADIR := $(PWD)/external/bison/data
-BISON := prebuilts/misc/$(BUILD_OS)-$(BUILD_ARCH)/bison/bison
+BISON := bison
 YACC := $(BISON) -d
 
 DOXYGEN:= doxygen
@@ -341,6 +336,7 @@ BCC_COMPAT := $(HOST_OUT_EXECUTABLES)/bcc_compat$(HOST_EXECUTABLE_SUFFIX)
 DEXOPT := $(HOST_OUT_EXECUTABLES)/dexopt$(HOST_EXECUTABLE_SUFFIX)
 DEXPREOPT := dalvik/tools/dex-preopt
 LINT := prebuilts/sdk/tools/lint
+PULL_LP_BIN := build/tools/pull-lp-bin.py
 
 # ACP is always for the build OS, not for the host OS
 ACP := $(BUILD_OUT_EXECUTABLES)/acp$(BUILD_EXECUTABLE_SUFFIX)
@@ -369,24 +365,36 @@ ifeq ($(BUILD_OS),darwin)
 # leave this blank
 HOST_JDK_TOOLS_JAR :=
 else
-HOST_JDK_TOOLS_JAR:= $(shell $(BUILD_SYSTEM)/find-jdk-tools-jar.sh)
-ifeq ($(wildcard $(HOST_JDK_TOOLS_JAR)),)
-$(error Error: could not find jdk tools.jar, please install JDK6, \
-    which you can download from java.sun.com)
-endif
+#HOST_JDK_TOOLS_JAR:= $(shell $(BUILD_SYSTEM)/find-jdk-tools-jar.sh)
+#ifeq ($(wildcard $(HOST_JDK_TOOLS_JAR)),)
+#$(error Error: could not find jdk tools.jar, please install JDK6, \
+#    which you can download from java.sun.com)
+#endif
 endif
 
 # Is the host JDK 64-bit version?
-HOST_JDK_IS_64BIT_VERSION :=
-ifneq ($(filter 64-Bit, $(shell java -version 2>&1)),)
-HOST_JDK_IS_64BIT_VERSION := true
-endif
+#HOST_JDK_IS_64BIT_VERSION :=
+#ifneq ($(filter 64-Bit, $(shell java -version 2>&1)),)
+#HOST_JDK_IS_64BIT_VERSION := true
+#endif
 
 # It's called md5 on Mac OS and md5sum on Linux
 ifeq ($(HOST_OS),darwin)
 MD5SUM:=md5 -q
 else
 MD5SUM:=md5sum
+endif
+
+# In-place sed is done different in linux than OS X
+ifeq ($(HOST_OS),darwin)
+GSED:=$(shell which gsed)
+ifeq ($(GSED),)
+SED_INPLACE:=sed -i ''
+else
+SED_INPLACE:=gsed -i
+endif
+else
+SED_INPLACE:=sed -i
 endif
 
 # In-place sed is done different in linux than OS X

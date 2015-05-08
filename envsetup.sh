@@ -166,6 +166,22 @@ function setpaths()
         export ANDROID_EABI_TOOLCHAIN=$gccprebuiltdir/$toolchaindir
     fi
 
+    # Also check for system wide GCC and use it as default if available
+    case $ARCH in
+        arm)
+            if [ -x /usr/bin/arm-linux-androideabi-gcc ]; then
+                export ANDROID_EABI_TOOLCHAIN=/usr/bin
+            fi
+            ;;
+        x86)
+            if [ -x /usr/bin/i686-linux-android-gcc ]; then
+                export ANDROID_EABI_TOOLCHAIN=/usr/bin
+            fi
+            ;;
+        *)
+            ;;
+    esac
+
     unset ARM_EABI_TOOLCHAIN ARM_EABI_TOOLCHAIN_PATH
     case $ARCH in
         arm)
@@ -181,6 +197,13 @@ function setpaths()
             # No need to set ARM_EABI_TOOLCHAIN for other ARCHs
             ;;
     esac
+    # Also check for system wide GCC and use it as default if available
+    if [ "$ARCH" == "arm" ]; then
+        if [ -x /usr/bin/arm-linux-androideabi-gcc ]; then
+            export ARM_EABI_TOOLCHAIN=/usr/bin
+            ARM_EABI_TOOLCHAIN_PATH=":/usr/bin"
+        fi
+    fi
 
     export ANDROID_TOOLCHAIN=$ANDROID_EABI_TOOLCHAIN
     export ANDROID_QTOOLS=$T/development/emulator/qtools
@@ -2156,6 +2179,16 @@ function pez {
         echo -e "\e[0;32mSUCCESS\e[00m"
     fi
     return $retval
+}
+
+function updatesystemimg()
+{
+    T=$(gettop)
+    if [ ! "$T" ]; then
+        echo "Couldn't locate the top of the tree.  Try setting TOP." >&2
+        return
+    fi
+    ("$T"/build/tools/update-system-img.sh)
 }
 
 if [ "x$SHELL" != "x/bin/bash" ]; then
