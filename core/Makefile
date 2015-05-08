@@ -408,13 +408,43 @@ INTERNAL_RAMDISK_FILES := $(filter $(TARGET_ROOT_OUT)/%, \
 	$(ALL_GENERATED_SOURCES) \
 	$(ALL_DEFAULT_INSTALLED_MODULES))
 
+# Default ramdisk comes now from Ubuntu
 BUILT_RAMDISK_TARGET := $(PRODUCT_OUT)/ramdisk.img
+BUILT_RAMDISK_TARGET_ANDROID := $(PRODUCT_OUT)/android-ramdisk.img
 
 # We just build this directly to the install location.
-INSTALLED_RAMDISK_TARGET := $(BUILT_RAMDISK_TARGET)
-$(INSTALLED_RAMDISK_TARGET): $(MKBOOTFS) $(INTERNAL_RAMDISK_FILES) | $(MINIGZIP)
-	$(call pretty,"Target ram disk: $@")
+INSTALLED_RAMDISK_TARGET_ANDROID := $(BUILT_RAMDISK_TARGET_ANDROID)
+$(INSTALLED_RAMDISK_TARGET_ANDROID): $(MKBOOTFS) $(INTERNAL_RAMDISK_FILES) | $(MINIGZIP)
+	$(call pretty,"Target Android ram disk: $@")
 	$(hide) $(MKBOOTFS) $(TARGET_ROOT_OUT) | $(MINIGZIP) > $@
+
+BOOT_ANDROID_RAMDISK_IMG := $(TARGET_OUT)/boot/android-ramdisk.img
+
+$(BOOT_ANDROID_RAMDISK_IMG): $(INSTALLED_RAMDISK_TARGET_ANDROID)
+	$(hide) mkdir -p $(dir $@)
+	$(hide) $(ACP) $(INSTALLED_RAMDISK_TARGET_ANDROID) $@
+
+# Download the Ubuntu Touch ramdisk from the archive
+TARGET_UBUNTU_INITRD_PKG := ubuntu-touch-generic-initrd
+TARGET_UBUNTU_INITRD_SERIES := vivid
+TARGET_OUT_UBUNTU_INITRD := $(TARGET_OUT_UBUNTU)/$(TARGET_UBUNTU_INITRD_PKG)
+TARGET_UBUNTU_INITRD := $(TARGET_OUT_UBUNTU_INITRD)/usr/lib/ubuntu-touch-generic-initrd/initrd.img-touch
+INSTALLED_RAMDISK_TARGET := $(BUILT_RAMDISK_TARGET)
+ifeq ($(TARGET_ARCH),x86)
+TARGET_UBUNTU_ARCH := i386
+else
+TARGET_UBUNTU_ARCH := armhf
+endif
+
+.PHONY: $(INSTALLED_RAMDISK_TARGET)
+$(INSTALLED_RAMDISK_TARGET): $(MKBOOTFS) | $(MINIGZIP)
+	$(call pretty,"Target Ubuntu Touch ram disk: $@")
+	$(hide) rm -rf $(TARGET_OUT_UBUNTU_INITRD) $(TARGET_UBUNTU_ROOT_OUT)
+	$(hide) mkdir -p $(TARGET_OUT_UBUNTU_INITRD) $(TARGET_UBUNTU_ROOT_OUT)
+	$(hide) $(PULL_LP_BIN) $(TARGET_UBUNTU_INITRD_PKG) -o $(TARGET_OUT_UBUNTU_INITRD) -a $(TARGET_UBUNTU_ARCH) $(TARGET_UBUNTU_INITRD_SERIES)
+	$(hide) dpkg-deb -x $(TARGET_OUT_UBUNTU_INITRD)/$(TARGET_UBUNTU_INITRD_PKG)*.deb $(TARGET_OUT_UBUNTU_INITRD)
+	$(hide) $(ACP) $(TARGET_UBUNTU_INITRD) $@
+	$(hide) cd $(TARGET_UBUNTU_ROOT_OUT) && $(MINIGZIP) -c -d $@ | cpio -id
 
 .PHONY: ramdisk-nodeps
 ramdisk-nodeps: $(MKBOOTFS) | $(MINIGZIP)
@@ -425,6 +455,13 @@ ifneq ($(strip $(TARGET_NO_KERNEL)),true)
 
 # -----------------------------------------------------------------
 # the boot image, which is a collection of other images.
+INTERNAL_BOOTIMAGE_ARGS_ANDROID := \
+	$(addprefix --second ,$(INSTALLED_2NDBOOTLOADER_TARGET)) \
+	--kernel $(INSTALLED_KERNEL_TARGET) \
+	--ramdisk $(INSTALLED_RAMDISK_TARGET_ANDROID)
+
+INTERNAL_BOOTIMAGE_FILES_ANDROID := $(filter-out --%,$(INTERNAL_BOOTIMAGE_ARGS_ANDROID))
+
 INTERNAL_BOOTIMAGE_ARGS := \
 	$(addprefix --second ,$(INSTALLED_2NDBOOTLOADER_TARGET)) \
 	--kernel $(INSTALLED_KERNEL_TARGET) \
@@ -434,17 +471,17 @@ INTERNAL_BOOTIMAGE_FILES := $(filter-out --%,$(INTERNAL_BOOTIMAGE_ARGS))
 
 BOARD_KERNEL_CMDLINE := $(strip $(BOARD_KERNEL_CMDLINE))
 ifdef BOARD_KERNEL_CMDLINE
-  INTERNAL_BOOTIMAGE_ARGS += --cmdline "$(BOARD_KERNEL_CMDLINE)"
+  INTERNAL_BOOTIMAGE_ARGS_COMMON += --cmdline "$(BOARD_KERNEL_CMDLINE)"
 endif
 
 BOARD_KERNEL_BASE := $(strip $(BOARD_KERNEL_BASE))
 ifdef BOARD_KERNEL_BASE
-  INTERNAL_BOOTIMAGE_ARGS += --base $(BOARD_KERNEL_BASE)
+  INTERNAL_BOOTIMAGE_ARGS_COMMON += --base $(BOARD_KERNEL_BASE)
 endif
 
 BOARD_KERNEL_PAGESIZE := $(strip $(BOARD_KERNEL_PAGESIZE))
 ifdef BOARD_KERNEL_PAGESIZE
-  INTERNAL_BOOTIMAGE_ARGS += --pagesize $(BOARD_KERNEL_PAGESIZE)
+  INTERNAL_BOOTIMAGE_ARGS_COMMON += --pagesize $(BOARD_KERNEL_PAGESIZE)
 endif
 
 ifneq ($(BOARD_FORCE_RAMDISK_ADDRESS),)
@@ -452,20 +489,36 @@ ifneq ($(BOARD_FORCE_RAMDISK_ADDRESS),)
 endif
 
 INSTALLED_BOOTIMAGE_TARGET := $(PRODUCT_OUT)/boot.img
+INSTALLED_BOOTIMAGE_TARGET_ANDROID := $(PRODUCT_OUT)/android-boot.img
 
 ifeq ($(TARGET_BOOTIMAGE_USE_EXT2),true)
 tmp_dir_for_image := $(call intermediates-dir-for,EXECUTABLES,boot_img)/bootimg
-INTERNAL_BOOTIMAGE_ARGS += --tmpdir $(tmp_dir_for_image)
-INTERNAL_BOOTIMAGE_ARGS += --genext2fs $(MKEXT2IMG)
+INTERNAL_BOOTIMAGE_ARGS_COMMON += --tmpdir $(tmp_dir_for_image)
+INTERNAL_BOOTIMAGE_ARGS_COMMON += --genext2fs $(MKEXT2IMG)
+INTERNAL_BOOTIMAGE_ARGS += $(INTERNAL_BOOTIMAGE_ARGS_COMMON)
+INTERNAL_BOOTIMAGE_ARGS_ANDROID += $(INTERNAL_BOOTIMAGE_ARGS_COMMON)
+
+$(INSTALLED_BOOTIMAGE_TARGET_ANDROID): $(MKEXT2IMG) $(INTERNAL_BOOTIMAGE_FILES_ANDROID)
+	$(call pretty,"Target boot image for Android: $@")
+	$(hide) $(MKEXT2BOOTIMG) $(INTERNAL_BOOTIMAGE_ARGS_ANDROID) --output $@
+
 $(INSTALLED_BOOTIMAGE_TARGET): $(MKEXT2IMG) $(INTERNAL_BOOTIMAGE_FILES)
-	$(call pretty,"Target boot image: $@")
+	$(call pretty,"Target boot image for Ubuntu Touch: $@")
 	$(hide) $(MKEXT2BOOTIMG) $(INTERNAL_BOOTIMAGE_ARGS) --output $@
 	@echo -e ${CL_CYN}"Made boot image: $@"${CL_RST}
 
 else ifndef BOARD_CUSTOM_BOOTIMG_MK # TARGET_BOOTIMAGE_USE_EXT2 != true
 
+INTERNAL_BOOTIMAGE_ARGS += $(INTERNAL_BOOTIMAGE_ARGS_COMMON)
+INTERNAL_BOOTIMAGE_ARGS_ANDROID += $(INTERNAL_BOOTIMAGE_ARGS_COMMON)
+
+$(INSTALLED_BOOTIMAGE_TARGET_ANDROID): $(MKBOOTIMG) $(INTERNAL_BOOTIMAGE_FILES_ANDROID)
+	$(call pretty,"Target boot image for Android: $@")
+	$(hide) $(MKBOOTIMG) $(INTERNAL_BOOTIMAGE_ARGS_ANDROID) $(BOARD_MKBOOTIMG_ARGS) --output $@
+	$(hide) $(call assert-max-image-size,$@,$(BOARD_BOOTIMAGE_PARTITION_SIZE),raw)
+ 
 $(INSTALLED_BOOTIMAGE_TARGET): $(MKBOOTIMG) $(INTERNAL_BOOTIMAGE_FILES)
-	$(call pretty,"Target boot image: $@")
+	$(call pretty,"Target boot image for Ubuntu Touch: $@")
 	$(hide) $(MKBOOTIMG) $(INTERNAL_BOOTIMAGE_ARGS) $(BOARD_MKBOOTIMG_ARGS) --output $@
 	$(hide) $(call assert-max-image-size,$@,$(BOARD_BOOTIMAGE_PARTITION_SIZE),raw)
 	@echo -e ${CL_CYN}"Made boot image: $@"${CL_RST}
@@ -479,6 +532,7 @@ else	# TARGET_NO_KERNEL
 # TODO: make the emulator use bootimages, and make mkbootimg accept
 #       kernel-less inputs.
 INSTALLED_BOOTIMAGE_TARGET := $(INSTALLED_RAMDISK_TARGET)
+INSTALLED_BOOTIMAGE_TARGET_ANDROID := $(INSTALLED_RAMDISK_TARGET_ANDROID)
 endif
 
 # -----------------------------------------------------------------
@@ -737,6 +791,9 @@ endif
 ifneq ($(BOARD_FORCE_RAMDISK_ADDRESS),)
   INTERNAL_RECOVERYIMAGE_ARGS += --ramdiskaddr $(BOARD_FORCE_RAMDISK_ADDRESS)
 endif
+INTERNAL_RECOVERY_FILES := $(filter $(TARGET_RECOVERY_OUT)/%, \
+	$(foreach module, $(ALL_MODULES), $(ALL_MODULES.$(module).INSTALLED)) \
+	$(ALL_DEFAULT_INSTALLED_MODULES))
 
 # Keys authorized to sign OTA packages this build will accept.  The
 # build always uses dev-keys for this; release packaging tools will
@@ -754,28 +811,28 @@ endif
 
 # Generate a file containing the keys that will be read by the
 # recovery binary.
-RECOVERY_INSTALL_OTA_KEYS := \
-	$(call intermediates-dir-for,PACKAGING,ota_keys)/keys
-DUMPKEY_JAR := $(HOST_OUT_JAVA_LIBRARIES)/dumpkey.jar
-$(RECOVERY_INSTALL_OTA_KEYS): PRIVATE_OTA_PUBLIC_KEYS := $(OTA_PUBLIC_KEYS)
-$(RECOVERY_INSTALL_OTA_KEYS): extra_keys := $(patsubst %,%.x509.pem,$(PRODUCT_EXTRA_RECOVERY_KEYS))
-$(RECOVERY_INSTALL_OTA_KEYS): $(OTA_PUBLIC_KEYS) $(DUMPKEY_JAR) $(extra_keys)
-	@echo "DumpPublicKey: $@ <= $(PRIVATE_OTA_PUBLIC_KEYS) $(extra_keys)"
-	@rm -rf $@
-	@mkdir -p $(dir $@)
-	java -jar $(DUMPKEY_JAR) $(PRIVATE_OTA_PUBLIC_KEYS) $(extra_keys) > $@
+#RECOVERY_INSTALL_OTA_KEYS := \
+	#$(call intermediates-dir-for,PACKAGING,ota_keys)/keys
+#DUMPKEY_JAR := $(HOST_OUT_JAVA_LIBRARIES)/dumpkey.jar
+#$(RECOVERY_INSTALL_OTA_KEYS): PRIVATE_OTA_PUBLIC_KEYS := $(OTA_PUBLIC_KEYS)
+#$(RECOVERY_INSTALL_OTA_KEYS): extra_keys := $(patsubst %,%.x509.pem,$(PRODUCT_EXTRA_RECOVERY_KEYS))
+#$(RECOVERY_INSTALL_OTA_KEYS): $(OTA_PUBLIC_KEYS) $(DUMPKEY_JAR) $(extra_keys)
+	#@echo "DumpPublicKey: $@ <= $(PRIVATE_OTA_PUBLIC_KEYS) $(extra_keys)"
+	#@rm -rf $@
+	#@mkdir -p $(dir $@)
+	#java -jar $(DUMPKEY_JAR) $(PRIVATE_OTA_PUBLIC_KEYS) $(extra_keys) > $@
 
 TARGET_RECOVERY_ROOT_TIMESTAMP := $(TARGET_RECOVERY_OUT)/root.ts
 
-$(TARGET_RECOVERY_ROOT_TIMESTAMP): \
+$(TARGET_RECOVERY_ROOT_TIMESTAMP): $(INTERNAL_RECOVERY_FILES) \
 		$(INSTALLED_RAMDISK_TARGET) \
+		$(INSTALLED_RAMDISK_TARGET_ANDROID) \
 		$(MKBOOTIMG) $(INTERNAL_BOOTIMAGE_FILES) \
 		$(recovery_binary) \
 		$(recovery_initrc) \
 		$(INSTALLED_2NDBOOTLOADER_TARGET) \
 		$(recovery_build_prop) $(recovery_resource_deps) \
-		$(recovery_fstab) \
-		$(RECOVERY_INSTALL_OTA_KEYS)
+		$(recovery_fstab)
 	@echo -e ${CL_CYN}"----- Making recovery filesystem ------"${CL_RST}
 	$(hide) mkdir -p $(TARGET_RECOVERY_OUT)
 	$(hide) mkdir -p $(TARGET_RECOVERY_ROOT_OUT)/etc $(TARGET_RECOVERY_ROOT_OUT)/tmp
@@ -796,7 +853,6 @@ $(TARGET_RECOVERY_ROOT_TIMESTAMP): \
 	  cp -rf $(item) $(TARGET_RECOVERY_OUT)/)
 	$(hide) $(foreach item,$(recovery_fstab), \
 	  cp -f $(item) $(TARGET_RECOVERY_ROOT_OUT)/etc/recovery.fstab)
-	$(hide) cp $(RECOVERY_INSTALL_OTA_KEYS) $(TARGET_RECOVERY_ROOT_OUT)/res/keys
 	$(hide) cat $(INSTALLED_DEFAULT_PROP_TARGET) $(recovery_build_prop) \
 	        > $(TARGET_RECOVERY_ROOT_OUT)/default.prop
 	@echo -e ${CL_YLW}"Modifying default.prop"${CL_RST}
@@ -862,6 +918,10 @@ ifdef BOARD_CUSTOM_BOOTIMG_MK
 include $(BOARD_CUSTOM_BOOTIMG_MK)
 endif
 
+ifdef BOARD_CUSTOM_BOOTIMG_MK
+include $(BOARD_CUSTOM_BOOTIMG_MK)
+endif
+
 # -----------------------------------------------------------------
 # system image
 #
@@ -876,7 +936,8 @@ INTERNAL_SYSTEMIMAGE_FILES := $(filter $(TARGET_OUT)/%, \
     $(ALL_GENERATED_SOURCES) \
     $(ALL_DEFAULT_INSTALLED_MODULES) \
     $(PDK_FUSION_SYSIMG_FILES) \
-    $(RECOVERY_RESOURCE_ZIP))
+    $(RECOVERY_RESOURCE_ZIP) \
+    $(BOOT_ANDROID_RAMDISK_IMG))
 
 ifdef is_tests_build
 # We don't want to install tests modules to the system partition
@@ -943,8 +1004,7 @@ RECOVERY_FROM_BOOT_PATCH :=
 endif
 $(RECOVERY_FROM_BOOT_PATCH): $(INSTALLED_RECOVERYIMAGE_TARGET) \
                              $(INSTALLED_BOOTIMAGE_TARGET) \
-			     $(HOST_OUT_EXECUTABLES)/imgdiff \
-	                     $(HOST_OUT_EXECUTABLES)/bsdiff
+			     $(HOST_OUT_EXECUTABLES)/imgdiff
 	@echo -e ${CL_CYN}"Construct recovery from boot"${CL_RST}
 	mkdir -p $(dir $@)
 	PATH=$(HOST_OUT_EXECUTABLES):$$PATH $(HOST_OUT_EXECUTABLES)/imgdiff $(INSTALLED_BOOTIMAGE_TARGET) $(INSTALLED_RECOVERYIMAGE_TARGET) $@
@@ -1216,10 +1276,8 @@ DISTTOOLS :=  $(HOST_OUT_EXECUTABLES)/minigzip \
 	  $(HOST_OUT_EXECUTABLES)/fs_config \
 	  $(HOST_OUT_EXECUTABLES)/mkyaffs2image \
 	  $(HOST_OUT_EXECUTABLES)/zipalign \
-	  $(HOST_OUT_EXECUTABLES)/bsdiff \
 	  $(HOST_OUT_EXECUTABLES)/imgdiff \
 	  $(HOST_OUT_JAVA_LIBRARIES)/dumpkey.jar \
-	  $(HOST_OUT_JAVA_LIBRARIES)/signapk.jar \
 	  $(HOST_OUT_EXECUTABLES)/mkuserimg.sh \
 	  $(HOST_OUT_EXECUTABLES)/make_ext4fs \
 	  $(HOST_OUT_EXECUTABLES)/simg2img \
@@ -1286,6 +1344,7 @@ endif
 # directories are up-to-date.
 $(BUILT_TARGET_FILES_PACKAGE): \
 		$(INSTALLED_BOOTIMAGE_TARGET) \
+		$(INSTALLED_BOOTIMAGE_TARGET_ANDROID) \
 		$(INSTALLED_RADIOIMAGE_TARGET) \
 		$(INSTALLED_RECOVERYIMAGE_TARGET) \
 		$(INSTALLED_SYSTEMIMAGE) \
@@ -1328,7 +1387,7 @@ endif
 	@# Components of the boot image
 	$(hide) mkdir -p $(zip_root)/BOOT
 	$(hide) $(call package_files-copy-root, \
-		$(TARGET_ROOT_OUT),$(zip_root)/BOOT/RAMDISK)
+		$(TARGET_UBUNTU_ROOT_OUT),$(zip_root)/BOOT/RAMDISK)
 ifdef INSTALLED_KERNEL_TARGET
 	$(hide) $(ACP) $(INSTALLED_KERNEL_TARGET) $(zip_root)/BOOT/kernel
 endif
@@ -1772,6 +1831,7 @@ ATREE_FILES := \
 	$(ALL_GENERATED_SOURCES) \
 	$(ALL_DEFAULT_INSTALLED_MODULES) \
 	$(INSTALLED_RAMDISK_TARGET) \
+	$(INSTALLED_RAMDISK_TARGET_ANDROID) \
 	$(ALL_DOCS) \
 	$(ALL_SDK_FILES)
 endif
@@ -1816,6 +1876,7 @@ deps := \
 	$(INSTALLED_SYSTEMIMAGE) \
 	$(INSTALLED_USERDATAIMAGE_TARGET) \
 	$(INSTALLED_RAMDISK_TARGET) \
+	$(INSTALLED_RAMDISK_TARGET_ANDROID) \
 	$(INSTALLED_SDK_BUILD_PROP_TARGET) \
 	$(INSTALLED_BUILD_PROP_TARGET) \
 	$(ATREE_FILES) \
