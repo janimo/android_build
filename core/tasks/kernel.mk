@@ -29,6 +29,21 @@ SELINUX_DEFCONFIG := $(TARGET_KERNEL_SELINUX_CONFIG)
 KERNEL_OUT := $(TARGET_OUT_INTERMEDIATES)/KERNEL_OBJ
 KERNEL_CONFIG := $(KERNEL_OUT)/.config
 
+KERNEL_HEADERS_INSTALL := $(KERNEL_OUT)/usr
+KERNEL_MODULES_INSTALL := system
+KERNEL_MODULES_OUT := $(TARGET_OUT)/lib/modules
+
+ifneq ($(TARGET_KERNEL_UBUNTU_PPA_TEAM),)
+	PULL_LP_BIN_EXTRA_OPTS := -t $(TARGET_KERNEL_UBUNTU_PPA_TEAM) -p $(TARGET_KERNEL_UBUNTU_PPA_NAME)
+endif
+TARGET_OUT_UBUNTU_KERNEL := $(TARGET_OUT_UBUNTU)/kernel
+
+ifeq ($(TARGET_ARCH),x86)
+TARGET_UBUNTU_ARCH := i386
+else
+TARGET_UBUNTU_ARCH := armhf
+endif
+
 ifneq ($(BOARD_KERNEL_IMAGE_NAME),)
 	TARGET_PREBUILT_INT_KERNEL_TYPE := $(BOARD_KERNEL_IMAGE_NAME)
 	TARGET_PREBUILT_INT_KERNEL := $(KERNEL_OUT)/arch/$(TARGET_ARCH)/boot/$(TARGET_PREBUILT_INT_KERNEL_TYPE)
@@ -47,7 +62,32 @@ else ifeq ($(BOARD_USES_UNCOMPRESSED_BOOT),true)
 endif
 endif
 
-ifeq "$(wildcard $(KERNEL_SRC) )" ""
+ifeq ($(TARGET_KERNEL_UBUNTU),true)
+    ifneq ($(TARGET_PREBUILT_INT_KERNEL_TYPE),zImage)
+        $(warning ***************************************************************)
+        $(warning * At the moment only zImage kernel is supported when fetching *)
+        $(warning * kernel from the Ubuntu archive. Make sure your device does  *)
+        $(warning * not use BOARD_USES_UBOOT or BOARD_USES_UNCOMPRESSED_BOOT    *)
+        $(warning ***************************************************************)
+        $(error "INCOMPATIBLE KERNEL TYPE")
+    endif
+
+    ifneq ($(TARGET_KERNEL_UBUNTU_META),)
+        NEEDS_KERNEL_COPY := true
+        FETCH_KERNEL_UBUNTU := true
+        FULL_KERNEL_BUILD := false
+        KERNEL_BIN := $(TARGET_OUT_UBUNTU_KERNEL)/vmlinuz
+    else
+        $(warning ***************************************************************)
+        $(warning * As the Ubuntu kernel package ABI version in part of the     *)
+        $(warning * package name, a meta package is used to track the latest    *)
+        $(warning * version available in the archive. Please make that the      *)
+        $(warning * required meta package is available and defined by the       *)
+        $(warning * variable TARGET_KERNEL_UBUNTU_META                          *)
+        $(warning ***************************************************************)
+        $(error "MISSING TARGET_KERNEL_UBUNTU_META")
+    endif
+else ifeq "$(wildcard $(KERNEL_SRC) )" ""
     ifneq ($(TARGET_PREBUILT_KERNEL),)
         HAS_PREBUILT_KERNEL := true
         NEEDS_KERNEL_COPY := true
@@ -106,24 +146,45 @@ else
     endif
 endif
 
-ifeq ($(BOARD_HAS_MTK_HARDWARE),true)
-  ifeq ($(BOARD_USES_MTK_KERNELBUILD),true)
-    include $(CLEAR_VARS)
-    $(shell rm -f $(TARGET_PREBUILT_INT_KERNEL))
-    FULL_KERNEL_BUILD := false
-    PROJECT_NAME := $(TARGET_KERNEL_CONFIG)
-$(TARGET_PREBUILT_INT_KERNEL):
-	cd $(TARGET_KERNEL_SOURCE) && env -i PATH=$(PATH) ./makeMtk -t -o=OUT_DIR=$(OUT_DIR),TARGET_BUILD_VARIANT=$(TARGET_BUILD_VARIANT) $(PROJECT_NAME) r k
-	-cd $(TARGET_KERNEL_SOURCE) && git clean -fd
+ifeq ($(FETCH_KERNEL_UBUNTU),true)
+## Also install the kernel headers if the source is available
+$(KERNEL_HEADERS_INSTALL):
+	if [ -f $(KERNEL_SRC)/Makefile ]; then \
+		mkdir -p $(KERNEL_OUT); \
+		$(MAKE) -C $(KERNEL_SRC) O=$(KERNEL_OUT) ARCH=$(TARGET_ARCH) $(ARM_CROSS_COMPILE) headers_install; \
+		fi
 
-  endif
-endif
+.PHONY: $(TARGET_OUT_UBUNTU_KERNEL)
+$(TARGET_OUT_UBUNTU_KERNEL):
+	$(hide) rm -rf $(TARGET_OUT_UBUNTU_KERNEL)
+	$(hide) rm -rf $(KERNEL_MODULES_OUT)
+	$(hide) mkdir -p $(TARGET_OUT_UBUNTU_KERNEL)
+	$(hide) mkdir -p $(KERNEL_MODULES_OUT)
 
-ifeq ($(FULL_KERNEL_BUILD),true)
+.PHONY: $(TARGET_OUT_UBUNTU_KERNEL)/vmlinuz
+$(TARGET_OUT_UBUNTU_KERNEL)/vmlinuz: $(TARGET_OUT_UBUNTU_KERNEL) $(KERNEL_HEADERS_INSTALL)
+	$(hide) $(PULL_LP_BIN) $(PULL_LP_BIN_EXTRA_OPTS) $(TARGET_KERNEL_UBUNTU_META) -o $(TARGET_OUT_UBUNTU_KERNEL) -a $(TARGET_UBUNTU_ARCH) $(TARGET_KERNEL_UBUNTU_SERIES)
+	$(hide) IFS=", "; for dep in \
+		`dpkg-deb -f $(TARGET_OUT_UBUNTU_KERNEL)/$(TARGET_KERNEL_UBUNTU_META)_*.deb Depends`; do \
+			if echo $$dep | grep -q "linux-image-"; then \
+				kernel_image=$$dep; \
+			fi; \
+		done; \
+		if [ -n "$$kernel_image" ]; then \
+			$(PULL_LP_BIN) $(PULL_LP_BIN_EXTRA_OPTS) $$kernel_image -o $(TARGET_OUT_UBUNTU_KERNEL) -a $(TARGET_UBUNTU_ARCH) $(TARGET_KERNEL_UBUNTU_SERIES); \
+			dpkg-deb -x $(TARGET_OUT_UBUNTU_KERNEL)/linux-image-[0-9]*.deb $(TARGET_OUT_UBUNTU_KERNEL); \
+			kernel_version=$${kernel_image#linux-image-}; \
+			cp -v $(TARGET_OUT_UBUNTU_KERNEL)/boot/vmlinuz-$$kernel_version $(TARGET_OUT_UBUNTU_KERNEL)/vmlinuz; \
+			cp -a $(TARGET_OUT_UBUNTU_KERNEL)/boot/*-$$kernel_version $(TARGET_OUT)/boot/; \
+			cp -a $(TARGET_OUT_UBUNTU_KERNEL)/lib/modules/$$kernel_version $(KERNEL_MODULES_OUT); \
+			depmod -a -b $(TARGET_OUT) $$kernel_version; \
+		else \
+			echo -n "Unable to find a valid linux-image dependency from "; \
+			echo "the meta package $(TARGET_KERNEL_UBUNTU_META), aborting."; \
+			exit 1; \
+		fi;
 
-KERNEL_HEADERS_INSTALL := $(KERNEL_OUT)/usr
-KERNEL_MODULES_INSTALL := system
-KERNEL_MODULES_OUT := $(TARGET_OUT)/lib/modules
+else ifeq ($(FULL_KERNEL_BUILD),true)
 
 define mv-modules
     mdpath=`find $(KERNEL_MODULES_OUT) -type f -name modules.order`;\
@@ -186,7 +247,6 @@ $(KERNEL_OUT)/piggy : $(TARGET_PREBUILT_INT_KERNEL)
 
 TARGET_KERNEL_BINARIES: $(KERNEL_OUT) $(KERNEL_CONFIG) $(KERNEL_HEADERS_INSTALL)
 	$(MAKE) $(MAKE_FLAGS) -C $(KERNEL_SRC) O=$(KERNEL_OUT) ARCH=$(TARGET_ARCH) $(ARM_CROSS_COMPILE) $(TARGET_PREBUILT_INT_KERNEL_TYPE)
-	-$(MAKE) $(MAKE_FLAGS) -C $(KERNEL_SRC) O=$(KERNEL_OUT) ARCH=$(TARGET_ARCH) $(ARM_CROSS_COMPILE) dtbs
 	-$(MAKE) $(MAKE_FLAGS) -C $(KERNEL_SRC) O=$(KERNEL_OUT) ARCH=$(TARGET_ARCH) $(ARM_CROSS_COMPILE) modules
 	-$(MAKE) $(MAKE_FLAGS) -C $(KERNEL_SRC) O=$(KERNEL_OUT) INSTALL_MOD_PATH=../../$(KERNEL_MODULES_INSTALL) ARCH=$(TARGET_ARCH) $(ARM_CROSS_COMPILE) modules_install
 	$(mv-modules)
